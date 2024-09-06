@@ -49,7 +49,7 @@ def data_engineering(df):
 # Función para separar los datos en entrenamiento, validación y prueba
 def split_data(df):
     # Separar las variables independientes y dependientes
-    X = df.drop(['result'], axis=1)
+    X = df.drop(['result', 'gf', 'ga'], axis=1)
     y = df['result']
 
     # Separar los datos en entrenamiento (60%), validación (20%) y prueba (20%)
@@ -79,10 +79,10 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     params = {
         'objective': 'binary:logistic',  # Clasificación binaria
         'eval_metric': 'logloss',
-        'max_depth': 2,                  # Profundidad máxima de los árboles
-        'learning_rate': 0.003,            # Tasa de aprendizaje
-        'lambda': 0.1,                     # Regularización L2
-        'alpha': 0.1                   # Regularización L1
+        'max_depth': 6,                  # Profundidad máxima de los árboles
+        'learning_rate': 0.01,            # Tasa de aprendizaje
+        'lambda': 1,                     # Regularización L2
+        'alpha': 0.5  
     }
 
     # Entrenar el modelo
@@ -95,11 +95,11 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     # Evaluar en el conjunto de validación
     accuracy_val = accuracy_score(y_val, y_val_pred)
     confusion_val = confusion_matrix(y_val, y_val_pred)
-    report_val = classification_report(y_val, y_val_pred)
+    report_val = classification_report(y_val, y_val_pred, output_dict=True)
 
     print('Validation Accuracy:', accuracy_val)
     print('Validation Confusion Matrix:\n', confusion_val)
-    print('Validation Classification Report:\n', report_val)
+    print('Validation Classification Report:\n', classification_report(y_val, y_val_pred))
 
     # Predecir en el conjunto de prueba
     y_test_pred_prob = model.predict(test_dmatrix)
@@ -108,11 +108,18 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     # Evaluar en el conjunto de prueba
     accuracy_test = accuracy_score(y_test, y_test_pred)
     confusion_test = confusion_matrix(y_test, y_test_pred)
-    report_test = classification_report(y_test, y_test_pred)
+    report_test = classification_report(y_test, y_test_pred, output_dict=True)
 
     print('Test Accuracy:', accuracy_test)
     print('Test Confusion Matrix:\n', confusion_test)
-    print('Test Classification Report:\n', report_test)
+    print('Test Classification Report:\n', classification_report(y_test, y_test_pred))
+
+    return accuracy_val, confusion_val, report_val, accuracy_test, confusion_test, report_test
+
+# Función para plotear las métricas
+def plot_metrics():
+    # Graficar la matriz de confusión de validación
+    plt.figure(figsize=(12, 5))
 
 def main():
     # Carga de datos
@@ -127,13 +134,9 @@ def main():
     # Separar y escalar los datos
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(df)
     X_train_scaled, X_val_scaled, X_test_scaled = scale_data(X_train, X_val, X_test)
-
-    # print(X_train.columns)
-    # print(y_train.head())
     
-    # Entrenar y evaluar el modelo
-    train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_test_scaled, y_test)
-
+    # Plotear las métricas
+    plot_metrics()
 
 if __name__ == '__main__':
     main()
