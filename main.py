@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 import xgboost as xgb
@@ -86,7 +86,7 @@ def plot_learning_curves(results):
     plt.ylabel('Log Loss')
     plt.title('Curvas de aprendizaje (mlogloss)')
 
-    plt.savefig('./img/learning_curves.png')
+    plt.savefig('./img/final_lc.png')
 
     plt.show()
 
@@ -102,24 +102,29 @@ def plot_confusion_matrix(conf_matrix, class_names, dataset):
     plt.title('Confusion Matrix - ' + dataset)
 
     # save the plot
-    plt.savefig('./img/confusion_matrix_' + dataset + '.png')
+    plt.savefig('./img/final_cm_' + dataset + '.png')
 
     plt.show()
 
-# Modificación en train_and_evaluate_model
+# Modificación en train_and_evaluate_model con Grid Search
 def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_test_scaled, y_test):
     # Crear DMatrix para XGBoost
     train_dmatrix = xgb.DMatrix(X_train_scaled, label=y_train)
     val_dmatrix = xgb.DMatrix(X_val_scaled, label=y_val)
     test_dmatrix = xgb.DMatrix(X_test_scaled, label=y_test)
     
-    # Parámetros de XGBoost para clasificación multiclase
+    # Parámetros de XGBoost con los mejores hiperparámetros
     params = {
         'objective': 'multi:softprob',  # Probabilidades para clasificación multiclase
-        'eval_metric': 'mlogloss',     # Log Loss para multiclase
-        'num_class': 3,                # Tres clases: 0 (derrota), 1 (empate), 2 (victoria)
-        'max_depth': 6,                # Profundidad máxima de los árboles
-        'learning_rate': 0.01          # Tasa de aprendizaje
+        'eval_metric': 'mlogloss',      # Log Loss para multiclase
+        'num_class': 3,                 # Tres clases: 0 (derrota), 1 (empate), 2 (victoria)
+        'learning_rate': 0.1,           # Tasa de aprendizaje ajustada
+        'max_depth': 3,                 # Profundidad máxima ajustada
+        'n_estimators': 100,            # Número de árboles
+        'colsample_bytree': 1.0,        # Fracción de columnas por árbol ajustada
+        'subsample': 1.0,               # Submuestreo ajustado
+        'reg_alpha': 0,                 # Regularización L1 ajustada
+        'reg_lambda': 0.1               # Regularización L2 ajustada
     }
 
     # Entrenar el modelo y guardar los resultados de las evaluaciones
@@ -142,7 +147,7 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     print('Validation Classification Report:\n', report_val)
 
     # Graficar la matriz de confusión para el conjunto de validación
-    plot_confusion_matrix(confusion_val, ['Derrota', 'Empate', 'Victoria'], 'validation')
+    plot_confusion_matrix(confusion_val, ['Derrota', 'Empate', 'Victoria'], 'val')
 
     # Predecir en el conjunto de prueba
     y_test_pred_prob = model.predict(test_dmatrix)
@@ -160,7 +165,7 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     # Graficar la matriz de confusión para el conjunto de prueba
     plot_confusion_matrix(confusion_test, ['Derrota', 'Empate', 'Victoria'], 'test')
 
-    # Devolver solo evals_result para poder usarlo en plot_learning_curves
+    # Devolver evals_result para plotear las curvas de aprendizaje
     return evals_result
 
 # Modificar el main para incluir las métricas de evaluación
