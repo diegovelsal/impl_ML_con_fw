@@ -35,9 +35,8 @@ def data_engineering(df):
     # Eliminar donde la variable 'dist' sea nulos
     # df = df.dropna(subset=['dist'])
 
-    # Para la variable 'Result', cambiarla a 1 si es victoria y a 0 si es empate o derrota
-    df['result'] = df['result'].apply(lambda result: 1 if result == 'W' else 0)
-    df['result'] = df['result'].astype('bool')
+    # Para la variable 'result', cambiarla a 2 si es victoria, 1 si es empate, y 0 si es derrota
+    df['result'] = df['result'].apply(lambda result: 2 if result == 'W' else (1 if result == 'D' else 0))
 
     # Convertir variables categóricas a numéricas con get_dummies
     df = pd.get_dummies(df, drop_first=False)
@@ -50,8 +49,8 @@ def data_engineering(df):
 # Función para separar los datos en entrenamiento, validación y prueba
 def split_data(df):
     # Separar las variables independientes y dependientes
-    X = df.drop(['result', 'gf', 'ga'], axis=1)
-    y = df['result']
+    X = df.drop(['result_0', 'result_1', 'result_2', 'gf', 'ga'], axis=1)
+    y = df[['result_0', 'result_1', 'result_2']].idxmax(axis=1).map({'result_0': 0, 'result_1': 1, 'result_2': 2})
 
     # Separar los datos en entrenamiento (60%), validación (20%) y prueba (20%)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -72,20 +71,20 @@ def scale_data(X_train, X_val, X_test):
 # Función para plotear las curvas de aprendizaje (loss) del modelo
 def plot_learning_curves(results):
     # Extraer las métricas de logloss de entrenamiento y validación
-    epochs = len(results['eval']['logloss'])
+    epochs = len(results['eval']['mlogloss'])
     x_axis = range(0, epochs)
 
     # Crear una figura con dos subplots
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Graficar la pérdida (logloss) en entrenamiento y validación
-    ax.plot(x_axis, results['train']['logloss'], label='Train')
-    ax.plot(x_axis, results['eval']['logloss'], label='Validation')
+    # Graficar la pérdida (mlogloss) en entrenamiento y validación
+    ax.plot(x_axis, results['train']['mlogloss'], label='Train')
+    ax.plot(x_axis, results['eval']['mlogloss'], label='Validation')
     
     # Configurar el gráfico
     ax.legend()
     plt.ylabel('Log Loss')
-    plt.title('Curvas de aprendizaje (logloss)')
+    plt.title('Curvas de aprendizaje (mlogloss)')
 
     plt.savefig('./img/learning_curves.png')
 
@@ -114,26 +113,25 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     val_dmatrix = xgb.DMatrix(X_val_scaled, label=y_val)
     test_dmatrix = xgb.DMatrix(X_test_scaled, label=y_test)
     
-    # Parámetros de XGBoost con regularización
+    # Parámetros de XGBoost para clasificación multiclase
     params = {
-        'objective': 'binary:logistic',  # Clasificación binaria
-        'eval_metric': 'logloss',
-        'max_depth': 6,                  # Profundidad máxima de los árboles
-        'learning_rate': 0.01,            # Tasa de aprendizaje
-        #'lambda': 1,                     # Regularización L2
-        #'alpha': 0.5                    # Regularización L1
+        'objective': 'multi:softprob',  # Probabilidades para clasificación multiclase
+        'eval_metric': 'mlogloss',     # Log Loss para multiclase
+        'num_class': 3,                # Tres clases: 0 (derrota), 1 (empate), 2 (victoria)
+        'max_depth': 6,                # Profundidad máxima de los árboles
+        'learning_rate': 0.01          # Tasa de aprendizaje
     }
 
     # Entrenar el modelo y guardar los resultados de las evaluaciones
     evals_result = {}
 
-    # Modelo se enstrena con el conjunto de entrenamiento y se evalua con el conjunto de validación
+    # Entrenar el modelo
     model = xgb.train(params, train_dmatrix, num_boost_round=100, evals=[(train_dmatrix, 'train'), (val_dmatrix, 'eval')], evals_result=evals_result, verbose_eval=False)
 
     # Predecir en el conjunto de validación
     y_val_pred_prob = model.predict(val_dmatrix)
-    y_val_pred = (y_val_pred_prob > 0.5).astype(int)
-    
+    y_val_pred = y_val_pred_prob.argmax(axis=1)
+
     # Evaluar en el conjunto de validación
     accuracy_val = accuracy_score(y_val, y_val_pred)
     confusion_val = confusion_matrix(y_val, y_val_pred)
@@ -144,11 +142,11 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     print('Validation Classification Report:\n', report_val)
 
     # Graficar la matriz de confusión para el conjunto de validación
-    plot_confusion_matrix(confusion_val, ['0', '1'], 'validation')
+    plot_confusion_matrix(confusion_val, ['Derrota', 'Empate', 'Victoria'], 'validation')
 
     # Predecir en el conjunto de prueba
     y_test_pred_prob = model.predict(test_dmatrix)
-    y_test_pred = (y_test_pred_prob > 0.5).astype(int)
+    y_test_pred = y_test_pred_prob.argmax(axis=1)
 
     # Evaluar en el conjunto de prueba
     accuracy_test = accuracy_score(y_test, y_test_pred)
@@ -159,8 +157,8 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     print('Test Confusion Matrix:\n', confusion_test)
     print('Test Classification Report:\n', report_test)
 
-    # Graficar la matriz de confusión para el conjunto de validación
-    plot_confusion_matrix(confusion_test, ['0', '1'], 'test')
+    # Graficar la matriz de confusión para el conjunto de prueba
+    plot_confusion_matrix(confusion_test, ['Derrota', 'Empate', 'Victoria'], 'test')
 
     # Devolver solo evals_result para poder usarlo en plot_learning_curves
     return evals_result
@@ -181,7 +179,7 @@ def main():
     evals_result = train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_test_scaled, y_test)
     
     # Plotear las métricas
-    # plot_learning_curves(evals_result)
+    plot_learning_curves(evals_result)
 
 if __name__ == '__main__':
     main()
