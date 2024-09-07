@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
@@ -42,7 +43,7 @@ def data_engineering(df):
     df = pd.get_dummies(df, drop_first=False)
     df = df.drop(['venue_Away'], axis=1)
 
-    print(df.info())
+    # print(df.info())
 
     return df
 
@@ -68,7 +69,45 @@ def scale_data(X_train, X_val, X_test):
 
     return X_train_scaled, X_val_scaled, X_test_scaled
 
-# Función para entrenar y evaluar el modelo usando XGBoost
+# Función para plotear las curvas de aprendizaje (loss) del modelo
+def plot_learning_curves(results):
+    # Extraer las métricas de logloss de entrenamiento y validación
+    epochs = len(results['eval']['logloss'])
+    x_axis = range(0, epochs)
+
+    # Crear una figura con dos subplots
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Graficar la pérdida (logloss) en entrenamiento y validación
+    ax.plot(x_axis, results['train']['logloss'], label='Train')
+    ax.plot(x_axis, results['eval']['logloss'], label='Validation')
+    
+    # Configurar el gráfico
+    ax.legend()
+    plt.ylabel('Log Loss')
+    plt.title('Curvas de aprendizaje (logloss)')
+
+    plt.savefig('./img/learning_curves.png')
+
+    plt.show()
+
+def plot_confusion_matrix(conf_matrix, class_names, dataset):
+    plt.figure(figsize=(8, 6))
+    
+    # Crear el heatmap con anotaciones
+    sns.heatmap(conf_matrix, annot=True, fmt='g', cmap='Blues', cbar=False, xticklabels=class_names, yticklabels=class_names)
+    
+    # Configuración del gráfico
+    plt.xlabel('Predicted labels')
+    plt.ylabel('True labels')
+    plt.title('Confusion Matrix - ' + dataset)
+
+    # save the plot
+    plt.savefig('./img/confusion_matrix_' + dataset + '.png')
+
+    plt.show()
+
+# Modificación en train_and_evaluate_model
 def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_test_scaled, y_test):
     # Crear DMatrix para XGBoost
     train_dmatrix = xgb.DMatrix(X_train_scaled, label=y_train)
@@ -81,12 +120,15 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
         'eval_metric': 'logloss',
         'max_depth': 6,                  # Profundidad máxima de los árboles
         'learning_rate': 0.01,            # Tasa de aprendizaje
-        'lambda': 1,                     # Regularización L2
-        'alpha': 0.5  
+        #'lambda': 1,                     # Regularización L2
+        #'alpha': 0.5                    # Regularización L1
     }
 
-    # Entrenar el modelo
-    model = xgb.train(params, train_dmatrix, num_boost_round=100, evals=[(val_dmatrix, 'eval')])
+    # Entrenar el modelo y guardar los resultados de las evaluaciones
+    evals_result = {}
+
+    # Modelo se enstrena con el conjunto de entrenamiento y se evalua con el conjunto de validación
+    model = xgb.train(params, train_dmatrix, num_boost_round=100, evals=[(train_dmatrix, 'train'), (val_dmatrix, 'eval')], evals_result=evals_result, verbose_eval=False)
 
     # Predecir en el conjunto de validación
     y_val_pred_prob = model.predict(val_dmatrix)
@@ -95,11 +137,14 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     # Evaluar en el conjunto de validación
     accuracy_val = accuracy_score(y_val, y_val_pred)
     confusion_val = confusion_matrix(y_val, y_val_pred)
-    report_val = classification_report(y_val, y_val_pred, output_dict=True)
+    report_val = classification_report(y_val, y_val_pred)
 
     print('Validation Accuracy:', accuracy_val)
     print('Validation Confusion Matrix:\n', confusion_val)
-    print('Validation Classification Report:\n', classification_report(y_val, y_val_pred))
+    print('Validation Classification Report:\n', report_val)
+
+    # Graficar la matriz de confusión para el conjunto de validación
+    plot_confusion_matrix(confusion_val, ['0', '1'], 'validation')
 
     # Predecir en el conjunto de prueba
     y_test_pred_prob = model.predict(test_dmatrix)
@@ -108,19 +153,19 @@ def train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_tes
     # Evaluar en el conjunto de prueba
     accuracy_test = accuracy_score(y_test, y_test_pred)
     confusion_test = confusion_matrix(y_test, y_test_pred)
-    report_test = classification_report(y_test, y_test_pred, output_dict=True)
+    report_test = classification_report(y_test, y_test_pred)
 
     print('Test Accuracy:', accuracy_test)
     print('Test Confusion Matrix:\n', confusion_test)
-    print('Test Classification Report:\n', classification_report(y_test, y_test_pred))
+    print('Test Classification Report:\n', report_test)
 
-    return accuracy_val, confusion_val, report_val, accuracy_test, confusion_test, report_test
+    # Graficar la matriz de confusión para el conjunto de validación
+    plot_confusion_matrix(confusion_test, ['0', '1'], 'test')
 
-# Función para plotear las métricas
-def plot_metrics():
-    # Graficar la matriz de confusión de validación
-    plt.figure(figsize=(12, 5))
+    # Devolver solo evals_result para poder usarlo en plot_learning_curves
+    return evals_result
 
+# Modificar el main para incluir las métricas de evaluación
 def main():
     # Carga de datos
     df = pd.read_csv('data/matches.csv')
@@ -128,15 +173,15 @@ def main():
     # Data Engineering
     df = data_engineering(df)
 
-    # Almacenar datos en un archivo CSV
-    # df.to_csv('data/matches_clean.csv', index=False)
-
     # Separar y escalar los datos
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(df)
     X_train_scaled, X_val_scaled, X_test_scaled = scale_data(X_train, X_val, X_test)
     
+    # Entrenar el modelo y obtener resultados
+    evals_result = train_and_evaluate_model(X_train_scaled, X_val_scaled, y_train, y_val, X_test_scaled, y_test)
+    
     # Plotear las métricas
-    plot_metrics()
+    # plot_learning_curves(evals_result)
 
 if __name__ == '__main__':
     main()
